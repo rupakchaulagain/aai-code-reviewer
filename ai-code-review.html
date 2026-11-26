@@ -1,0 +1,633 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Code Review</title>
+<style>
+/* ─────────────────────────────────────────────────────────────
+   Theme tokens. Your plugin can override any of these at runtime:
+   document.documentElement.style.setProperty('--bg', ideColor)
+   ───────────────────────────────────────────────────────────── */
+:root{
+  --bg:#1b1d21;
+  --bg-sunken:#161719;
+  --bg-raised:#232629;
+  --bg-hover:#2b2f33;
+  --line:#33383d;
+  --line-soft:#292d31;
+  --fg:#d6dae0;
+  --fg-dim:#8b929b;
+  --fg-faint:#5f666e;
+  --accent:#a78bfa;
+  --accent-soft:#a78bfa26;
+  --sev-blocker:#f0616d;
+  --sev-major:#e0a13a;
+  --sev-minor:#4aa8d8;
+  --sev-nit:#6f7780;
+  --ok:#4cbf83;
+  --radius:6px;
+  --mono:ui-monospace,"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Inter,sans-serif;
+  --step:13px;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  background:var(--bg);color:var(--fg);
+  font:var(--step)/1.55 var(--sans);
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;                 /* the panel scrolls, not the page */
+}
+button,select,input{font:inherit;color:inherit}
+::selection{background:var(--accent-soft)}
+
+/* Scrollbars — thin, IDE-native, always reachable */
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:#3a4046;border:3px solid transparent;background-clip:content-box;border-radius:8px}
+*::-webkit-scrollbar-thumb:hover{background:#4d555d;border:3px solid transparent;background-clip:content-box}
+*{scrollbar-width:thin;scrollbar-color:#3a4046 transparent}
+
+/* ── App shell: the whole reason scrolling works ───────────────
+   Every flex parent in the chain declares min-height:0 so children
+   are allowed to shrink below content size and scroll internally. */
+.app{display:flex;flex-direction:column;height:100%;min-height:0}
+.pane{display:flex;flex-direction:column;min-height:0}
+.scroll{overflow-y:auto;overflow-x:auto;min-height:0;overscroll-behavior:contain}
+
+/* ── Toolbar ─────────────────────────────────────────────────── */
+header{
+  flex:0 0 auto;padding:10px 12px 8px;
+  border-bottom:1px solid var(--line);background:var(--bg);
+}
+.titlerow{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+h1{margin:0;font-size:13px;font-weight:600;letter-spacing:.2px}
+.spacer{flex:1}
+.controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+label.lbl{color:var(--fg-dim);font-size:12px}
+
+select,.btn{
+  background:var(--bg-raised);border:1px solid var(--line);
+  border-radius:var(--radius);padding:5px 10px;cursor:pointer;
+  transition:background .12s,border-color .12s,color .12s;
+}
+select{padding-right:26px;appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--fg-dim) 50%),linear-gradient(135deg,var(--fg-dim) 50%,transparent 50%);
+  background-position:calc(100% - 14px) 52%,calc(100% - 9px) 52%;
+  background-size:5px 5px;background-repeat:no-repeat}
+.btn:hover:not(:disabled),select:hover{background:var(--bg-hover);border-color:#454b52}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#17131f;font-weight:600}
+.btn.primary:hover:not(:disabled){filter:brightness(1.08)}
+.btn.icon{padding:5px 7px;line-height:1;color:var(--fg-dim)}
+.btn.icon:hover{color:var(--fg)}
+.btn.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+.model{
+  display:flex;align-items:center;gap:6px;margin-top:8px;
+  font:11px/1.4 var(--mono);color:var(--fg-faint);
+}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--fg-faint);flex:0 0 auto}
+.dot.live{background:var(--ok);animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* Progress hairline */
+.progress{height:2px;background:var(--line-soft);position:relative;overflow:hidden;flex:0 0 auto}
+.progress i{position:absolute;inset:0;width:35%;background:var(--accent);
+  transform:translateX(-100%);border-radius:2px}
+.progress.run i{animation:slide 1.1s ease-in-out infinite}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(330%)}}
+
+/* ── Filter bar ──────────────────────────────────────────────── */
+.filters{
+  flex:0 0 auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  padding:8px 12px;border-bottom:1px solid var(--line-soft);
+}
+.search{
+  flex:1 1 150px;min-width:120px;display:flex;align-items:center;gap:6px;
+  background:var(--bg-sunken);border:1px solid var(--line);border-radius:var(--radius);padding:4px 8px;
+}
+.search:focus-within{border-color:var(--accent)}
+.search input{flex:1;min-width:0;background:none;border:0;outline:none;font-size:12px}
+.search input::placeholder{color:var(--fg-faint)}
+.chip{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;
+  border:1px solid var(--line);background:var(--bg-raised);font-size:11.5px;
+  color:var(--fg-dim);cursor:pointer;user-select:none;transition:.12s;
+}
+.chip:hover{background:var(--bg-hover)}
+.chip[aria-pressed=true]{color:var(--fg);border-color:currentColor}
+.chip .sw{width:7px;height:7px;border-radius:2px;background:currentColor}
+.chip.blocker{color:var(--sev-blocker)} .chip.major{color:var(--sev-major)}
+.chip.minor{color:var(--sev-minor)}     .chip.nit{color:var(--sev-nit)}
+.chip[aria-pressed=false]{color:var(--fg-faint);opacity:.55}
+
+/* ── Findings (the signature: a severity spine you can click) ── */
+.output{flex:1 1 auto;min-height:0;display:flex}
+.spine{
+  flex:0 0 26px;border-right:1px solid var(--line-soft);
+  padding:10px 0;display:flex;flex-direction:column;align-items:center;gap:5px;
+  overflow:hidden;background:var(--bg-sunken);
+}
+.spine b{
+  width:8px;height:8px;border-radius:50%;cursor:pointer;flex:0 0 auto;
+  transition:transform .12s,box-shadow .12s;
+}
+.spine b:hover{transform:scale(1.55)}
+.spine b.active{box-shadow:0 0 0 3px var(--accent-soft)}
+.list{flex:1 1 auto;min-width:0;padding:4px 0 24px}
+
+.empty{padding:44px 22px;text-align:center;color:var(--fg-faint);max-width:340px;margin:0 auto}
+.empty strong{display:block;color:var(--fg-dim);font-weight:600;margin-bottom:5px;font-size:13px}
+.empty kbd{margin-top:14px;display:inline-block}
+
+.finding{border-bottom:1px solid var(--line-soft);position:relative}
+.finding::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--sev)}
+.finding.hidden{display:none}
+.f-head{
+  display:flex;gap:8px;align-items:flex-start;width:100%;text-align:left;
+  padding:9px 12px 9px 14px;background:none;border:0;cursor:pointer;
+}
+.f-head:hover{background:var(--bg-raised)}
+.caret{color:var(--fg-faint);transition:transform .15s;margin-top:3px;flex:0 0 auto;font-size:10px}
+.finding[open] .caret{transform:rotate(90deg)}
+.f-main{flex:1;min-width:0}
+.f-title{font-weight:500;word-break:break-word}
+.f-meta{
+  display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  margin-top:3px;font:11px/1.4 var(--mono);color:var(--fg-faint);
+}
+.f-meta .sev{color:var(--sev);text-transform:uppercase;letter-spacing:.6px;font-size:10px;font-weight:700}
+.loc{color:var(--fg-dim);cursor:pointer;text-decoration:none;border-bottom:1px dotted var(--line)}
+.loc:hover{color:var(--accent);border-color:var(--accent)}
+.f-body{display:none;padding:0 12px 14px 34px}
+.finding[open] .f-body{display:block;animation:fade .16s ease-out}
+@keyframes fade{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.f-body p{margin:0 0 10px}
+mark{background:var(--accent-soft);color:var(--fg);border-radius:2px;padding:0 1px}
+
+/* ── Code blocks with hover-copy ─────────────────────────────── */
+.code{position:relative;margin:10px 0;background:var(--bg-sunken);
+  border:1px solid var(--line-soft);border-radius:var(--radius)}
+.code pre{margin:0;padding:10px 12px;overflow-x:auto;font:12px/1.6 var(--mono)}
+.code .copy{position:absolute;top:6px;right:6px;opacity:0;transition:opacity .12s}
+.code:hover .copy,.code .copy:focus-visible{opacity:1}
+.wrap-on .code pre,.wrap-on .stream{white-space:pre-wrap;word-break:break-word}
+code.inl{font:12px var(--mono);background:var(--bg-sunken);padding:1px 5px;border-radius:3px;color:#c8b6ff}
+
+/* ── Splitter ────────────────────────────────────────────────── */
+.splitter{
+  flex:0 0 7px;cursor:row-resize;background:var(--bg);
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;
+}
+.splitter::after{content:"";width:34px;height:2px;border-radius:2px;background:var(--line)}
+.splitter:hover::after,.splitter.drag::after{background:var(--accent)}
+
+/* ── Tabs ────────────────────────────────────────────────────── */
+.tabs{flex:0 0 auto;display:flex;align-items:center;gap:2px;padding:0 8px;border-bottom:1px solid var(--line-soft)}
+.tab{background:none;border:0;padding:8px 11px;color:var(--fg-dim);cursor:pointer;
+  border-bottom:2px solid transparent;font-size:12px;white-space:nowrap}
+.tab:hover{color:var(--fg)}
+.tab[aria-selected=true]{color:var(--fg);border-bottom-color:var(--accent)}
+.tab .n{font:10px var(--mono);color:var(--fg-faint);margin-left:5px}
+.panel{flex:1 1 auto;min-height:0;display:none;padding:10px 12px}
+.panel.show{display:block}
+.stream{margin:0;font:12px/1.65 var(--mono);white-space:pre;color:var(--fg-dim)}
+.stream .k{color:var(--accent)} .stream .g{color:var(--ok)} .stream .w{color:var(--sev-major)}
+.caret-blink{display:inline-block;width:7px;height:14px;background:var(--accent);
+  vertical-align:-2px;animation:pulse .9s steps(1) infinite}
+
+/* ── Status bar ──────────────────────────────────────────────── */
+footer{
+  flex:0 0 auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:6px 12px;border-top:1px solid var(--line);
+  font:11px var(--mono);color:var(--fg-faint);background:var(--bg-sunken);
+}
+kbd{font:10px var(--mono);background:var(--bg-raised);border:1px solid var(--line);
+  border-bottom-width:2px;border-radius:4px;padding:1px 5px;color:var(--fg-dim)}
+
+/* ── Toast ───────────────────────────────────────────────────── */
+#toast{
+  position:fixed;left:50%;bottom:44px;translate:-50% 12px;opacity:0;pointer-events:none;
+  background:var(--bg-raised);border:1px solid var(--line);border-left:2px solid var(--ok);
+  padding:7px 14px;border-radius:var(--radius);font-size:12px;
+  box-shadow:0 8px 24px #0009;transition:opacity .18s,translate .18s;z-index:50;
+}
+#toast.show{opacity:1;translate:-50% 0}
+#toast.err{border-left-color:var(--sev-blocker)}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:420px){.f-body{padding-left:14px}.spine{display:none}}
+</style>
+
+<div class="app">
+  <header>
+    <div class="titlerow">
+      <h1>AI Code Review</h1>
+      <span class="spacer"></span>
+      <button class="btn icon" id="wrapBtn" title="Toggle word wrap (Alt+Z)" aria-pressed="false">⏎</button>
+      <button class="btn icon" id="expandBtn" title="Expand or collapse all (Alt+E)">⌄</button>
+      <button class="btn icon" id="copyAll" title="Copy full review (Ctrl+Shift+C)">⧉</button>
+    </div>
+
+    <div class="controls">
+      <label class="lbl" for="scope">Review:</label>
+      <select id="scope">
+        <option>Local uncommitted changes</option>
+        <option>Staged changes only</option>
+        <option>Last commit</option>
+        <option>Branch vs. main</option>
+        <option>Current file</option>
+      </select>
+      <button class="btn primary" id="run">Review</button>
+      <button class="btn" id="stop" disabled>Stop</button>
+    </div>
+
+    <div class="model"><span class="dot" id="dot"></span><span id="modelLine">Google (Gemini) — gemini-3.5-flash-lite (token set)</span></div>
+  </header>
+
+  <div class="progress" id="prog"><i></i></div>
+
+  <div class="filters">
+    <div class="search">
+      <span style="color:var(--fg-faint)">⌕</span>
+      <input id="q" placeholder="Filter findings, files, rules…" spellcheck="false">
+    </div>
+    <button class="chip blocker" data-sev="blocker" aria-pressed="true"><span class="sw"></span>Blocker <span data-count>0</span></button>
+    <button class="chip major"   data-sev="major"   aria-pressed="true"><span class="sw"></span>Major <span data-count>0</span></button>
+    <button class="chip minor"   data-sev="minor"   aria-pressed="true"><span class="sw"></span>Minor <span data-count>0</span></button>
+    <button class="chip nit"     data-sev="nit"     aria-pressed="true"><span class="sw"></span>Nit <span data-count>0</span></button>
+  </div>
+
+  <!-- OUTPUT -->
+  <div class="output" id="outPane" style="flex:1 1 auto">
+    <div class="spine" id="spine"></div>
+    <div class="scroll list" id="list">
+      <div class="empty">
+        <strong>No review yet</strong>
+        Pick a scope and run a review. Findings land here, grouped by severity, with jump-to-line links and copyable patches.
+        <div><kbd>Ctrl</kbd> <kbd>Enter</kbd> to start</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="splitter" id="split" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="Resize panels"></div>
+
+  <!-- BOTTOM -->
+  <div class="pane" id="bottom" style="height:210px">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-tab="trace">Trace<span class="n" id="nTrace">0</span></button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="stream">Model stream</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="context">Reviewed context<span class="n" id="nCtx">0</span></button>
+      <span class="spacer"></span>
+      <button class="btn icon on" id="follow" title="Follow output" aria-pressed="true">↓</button>
+      <button class="btn icon" id="copyTab" title="Copy this tab">⧉</button>
+      <button class="btn icon" id="clearTab" title="Clear">✕</button>
+    </div>
+    <div class="scroll panel show" id="p-trace" role="tabpanel"><pre class="stream" id="trace">Waiting for a run.</pre></div>
+    <div class="scroll panel"      id="p-stream" role="tabpanel"><pre class="stream" id="stream">Waiting for a run.</pre></div>
+    <div class="scroll panel"      id="p-context" role="tabpanel"><pre class="stream" id="context">No context collected yet.</pre></div>
+  </div>
+
+  <footer>
+    <span id="status">Idle</span>
+    <span class="spacer" style="flex:1"></span>
+    <span><kbd>Ctrl</kbd><kbd>↵</kbd> run</span>
+    <span><kbd>Esc</kbd> stop</span>
+    <span><kbd>Alt</kbd><kbd>Z</kbd> wrap</span>
+  </footer>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+"use strict";
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+
+/* ══════════════════════════════════════════════════════════════
+   1. COPY — the fix.
+   navigator.clipboard is undefined in JCEF / non-HTTPS webviews,
+   and it also throws when the panel doesn't have focus. So we try,
+   in order: an injected IDE bridge → async clipboard → a hidden
+   textarea + execCommand, restoring the user's selection after.
+   ══════════════════════════════════════════════════════════════ */
+async function copyText(text){
+  if(!text) return false;
+
+  // (a) Native bridge. Expose one from Kotlin/Java:
+  //     JBCefJSQuery → window.ideCopy = function(t){ ... }
+  try{
+    if(typeof window.ideCopy==="function"){ window.ideCopy(text); return true; }
+    if(window.cefQuery){ window.cefQuery({request:"copy:"+text,onSuccess(){},onFailure(){}}); return true; }
+  }catch(e){}
+
+  // (b) Async Clipboard API — secure contexts only.
+  try{
+    if(navigator.clipboard&&window.isSecureContext){
+      await navigator.clipboard.writeText(text); return true;
+    }
+  }catch(e){/* fall through — usually NotAllowedError from lost focus */}
+
+  // (c) execCommand fallback. Works inside JCEF and http:// origins.
+  try{
+    const sel=document.getSelection(), saved=sel&&sel.rangeCount?sel.getRangeAt(0):null;
+    const ta=document.createElement("textarea");
+    ta.value=text; ta.setAttribute("readonly","");
+    ta.style.cssText="position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none";
+    document.body.appendChild(ta);
+    ta.focus({preventScroll:true}); ta.select(); ta.setSelectionRange(0,ta.value.length);
+    const ok=document.execCommand("copy");
+    ta.remove();
+    if(saved&&sel){ sel.removeAllRanges(); sel.addRange(saved); }
+    return ok;
+  }catch(e){ return false; }
+}
+async function copyAndTell(text,label){
+  const ok=await copyText(text);
+  toast(ok?(label||"Copied")+" · "+text.length.toLocaleString()+" chars"
+         :"Copy blocked by the IDE — select the text and press Ctrl+C", !ok);
+}
+let toastT;
+function toast(msg,isErr){
+  const t=$("#toast"); t.textContent=msg; t.classList.toggle("err",!!isErr); t.classList.add("show");
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),isErr?4200:1800);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   2. Sample findings — replace with your plugin's payload via
+      render(findings). Shape is documented at the bottom.
+   ══════════════════════════════════════════════════════════════ */
+const SAMPLE=[
+ {sev:"blocker",title:"Bearer token is logged in plaintext on every request",
+  file:"src/main/kotlin/net/review/ApiClient.kt",line:88,rule:"security/secret-logging",
+  body:"The interceptor writes the full `Authorization` header into the IDE log. Anyone with access to `idea.log` — including bug reports attached by users — can read a live API key.",
+  patch:"- log.info(\"→ \" + request.headers)\n+ log.info(\"→ \" + request.headers.redact(\"Authorization\"))"},
+ {sev:"blocker",title:"Streaming response is read on the EDT",
+  file:"src/main/kotlin/net/review/ReviewPanel.kt",line:142,rule:"threading/edt-blocking",
+  body:"`client.stream()` blocks until the first chunk arrives. Called from `actionPerformed`, this freezes the whole IDE for as long as the model takes to warm up.",
+  patch:"ApplicationManager.getApplication().executeOnPooledThread {\n    client.stream(prompt) { chunk ->\n        invokeLater { panel.append(chunk) }\n    }\n}"},
+ {sev:"major",title:"Diff is sent whole, ignoring the token budget",
+  file:"src/main/kotlin/net/review/DiffCollector.kt",line:57,rule:"cost/unbounded-payload",
+  body:"A large refactor produces a diff far past the model's context window. The request fails after the user has already waited, and on paid tiers it still bills for the attempt. Chunk per-file and cap total characters before sending.",
+  patch:"val budget = model.contextTokens * 3 / 4\nreturn files.asSequence()\n    .map { it.toPatch() }\n    .runningFold(0) { acc, p -> acc + p.length }\n    .takeWhile { it < budget }"},
+ {sev:"major",title:"`Stop` cancels the UI but not the HTTP call",
+  file:"src/main/kotlin/net/review/ReviewPanel.kt",line:203,rule:"lifecycle/leaked-request",
+  body:"Pressing Stop only flips a boolean. The socket stays open and keeps streaming into a discarded buffer until the server closes it.",
+  patch:"private var call: Call? = null\nfun stop() { call?.cancel(); call = null }"},
+ {sev:"minor",title:"Model name is hardcoded in three places",
+  file:"src/main/kotlin/net/review/Settings.kt",line:24,rule:"maintainability/duplication",
+  body:"`gemini-3.5-flash-lite` appears in the settings default, the panel label, and the request builder. Changing models means finding all three."},
+ {sev:"minor",title:"Empty state shows a blank box",
+  file:"src/main/resources/panel.html",line:1,rule:"ux/empty-state",
+  body:"Before the first run the output area is an unlabelled dark rectangle, so the panel reads as broken rather than idle. Say what belongs there and how to start."},
+ {sev:"nit",title:"Trailing whitespace in the prompt template",
+  file:"src/main/resources/prompts/review.md",line:12,rule:"style/whitespace",
+  body:"Costs a token per line and shows up as ragged diffs."}
+];
+
+/* ══════════════════════════════════════════════════════════════
+   3. Render
+   ══════════════════════════════════════════════════════════════ */
+const SEV={blocker:"var(--sev-blocker)",major:"var(--sev-major)",minor:"var(--sev-minor)",nit:"var(--sev-nit)"};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const inline=s=>esc(s).replace(/`([^`]+)`/g,'<code class="inl">$1</code>');
+let DATA=[];
+
+function render(items){
+  DATA=items;
+  const list=$("#list"), spine=$("#spine");
+  list.innerHTML=""; spine.innerHTML="";
+  if(!items.length){ list.innerHTML='<div class="empty"><strong>Nothing flagged</strong>The model reviewed the diff and found no issues worth reporting.</div>'; return; }
+
+  items.forEach((f,i)=>{
+    const el=document.createElement("div");
+    el.className="finding"; el.dataset.sev=f.sev; el.dataset.i=i;
+    el.style.setProperty("--sev",SEV[f.sev]);
+    el.innerHTML=`
+      <button class="f-head" aria-expanded="false">
+        <span class="caret">▶</span>
+        <span class="f-main">
+          <span class="f-title">${inline(f.title)}</span>
+          <span class="f-meta">
+            <span class="sev">${f.sev}</span>
+            <a class="loc" data-file="${esc(f.file)}" data-line="${f.line}">${esc(f.file.split("/").pop())}:${f.line}</a>
+            <span>${esc(f.rule||"")}</span>
+          </span>
+        </span>
+      </button>
+      <div class="f-body">
+        <p>${inline(f.body)}</p>
+        ${f.patch?`<div class="code"><button class="btn icon copy" title="Copy snippet">⧉</button><pre>${esc(f.patch)}</pre></div>`:""}
+        <button class="btn" data-copyf style="font-size:11.5px;padding:3px 9px">Copy finding</button>
+      </div>`;
+    list.appendChild(el);
+
+    const b=document.createElement("b");
+    b.style.background=SEV[f.sev]; b.title=f.sev+" — "+f.title;
+    b.onclick=()=>{ open(el,true); el.scrollIntoView({behavior:"smooth",block:"center"}); flash(b); };
+    spine.appendChild(b);
+  });
+  counts(); filter();
+}
+function flash(b){ $$(".spine b").forEach(x=>x.classList.remove("active")); b.classList.add("active"); }
+function open(el,state){ el.toggleAttribute("open",state); $(".f-head",el).setAttribute("aria-expanded",state); }
+
+function counts(){
+  $$(".chip").forEach(c=>{
+    c.querySelector("[data-count]").textContent=DATA.filter(f=>f.sev===c.dataset.sev).length;
+  });
+}
+
+/* Filter + highlight */
+function filter(){
+  const q=$("#q").value.trim().toLowerCase();
+  const on=new Set($$(".chip").filter(c=>c.getAttribute("aria-pressed")==="true").map(c=>c.dataset.sev));
+  let shown=0;
+  $$(".finding").forEach((el,i)=>{
+    const f=DATA[i];
+    const hay=(f.title+" "+f.file+" "+(f.rule||"")+" "+f.body).toLowerCase();
+    const vis=on.has(f.sev)&&(!q||hay.includes(q));
+    el.classList.toggle("hidden",!vis);
+    $$(".spine b")[i].style.display=vis?"":"none";
+    if(vis){shown++; if(q) open(el,true);}
+    mark(el,q);
+  });
+  $("#status").textContent=shown?`${shown} of ${DATA.length} findings shown`:(DATA.length?"No findings match the filter":"Idle");
+}
+function mark(el,q){
+  $$(".f-title,.f-body p",el).forEach(n=>{
+    const raw=n.dataset.raw||(n.dataset.raw=n.innerHTML);
+    n.innerHTML=q?raw.replace(new RegExp("(?![^<]*>)("+q.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+")","ig"),"<mark>$1</mark>"):raw;
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════
+   4. Events
+   ══════════════════════════════════════════════════════════════ */
+$("#list").addEventListener("click",e=>{
+  const head=e.target.closest(".f-head");
+  if(head&&!e.target.closest(".loc")){ const el=head.parentElement; open(el,!el.hasAttribute("open")); return; }
+  const loc=e.target.closest(".loc");
+  if(loc){ // hand off to the IDE
+    if(typeof window.ideOpenFile==="function") window.ideOpenFile(loc.dataset.file,+loc.dataset.line);
+    else toast("Would open "+loc.dataset.file+":"+loc.dataset.line);
+    return;
+  }
+  const cp=e.target.closest(".code .copy");
+  if(cp){ copyAndTell($("pre",cp.parentElement).textContent,"Snippet copied"); return; }
+  const cf=e.target.closest("[data-copyf]");
+  if(cf){
+    const f=DATA[+cf.closest(".finding").dataset.i];
+    copyAndTell(`[${f.sev.toUpperCase()}] ${f.title}\n${f.file}:${f.line}${f.rule?"  ("+f.rule+")":""}\n\n${f.body}${f.patch?"\n\n"+f.patch:""}`,"Finding copied");
+  }
+});
+
+$("#q").addEventListener("input",filter);
+$$(".chip").forEach(c=>c.onclick=()=>{ c.setAttribute("aria-pressed",c.getAttribute("aria-pressed")!=="true"); filter(); });
+
+$("#wrapBtn").onclick=e=>{
+  const on=document.body.classList.toggle("wrap-on");
+  e.currentTarget.setAttribute("aria-pressed",on); e.currentTarget.classList.toggle("on",on);
+};
+let allOpen=false;
+$("#expandBtn").onclick=()=>{ allOpen=!allOpen; $$(".finding").forEach(el=>open(el,allOpen)); $("#expandBtn").textContent=allOpen?"⌃":"⌄"; };
+$("#copyAll").onclick=()=>{
+  if(!DATA.length) return toast("Nothing to copy yet",true);
+  const md=["# AI Code Review","",`Scope: ${$("#scope").value}`,`Model: ${$("#modelLine").textContent}`,""]
+    .concat(DATA.map(f=>`## [${f.sev.toUpperCase()}] ${f.title}\n\`${f.file}:${f.line}\`${f.rule?" · "+f.rule:""}\n\n${f.body}${f.patch?"\n\n```\n"+f.patch+"\n```":""}`)).join("\n");
+  copyAndTell(md,"Review copied as Markdown");
+};
+
+/* Tabs */
+$$(".tab").forEach(t=>t.onclick=()=>{
+  $$(".tab").forEach(x=>x.setAttribute("aria-selected",x===t));
+  $$(".panel").forEach(p=>p.classList.toggle("show",p.id==="p-"+t.dataset.tab));
+});
+const activePanel=()=>$(".panel.show");
+$("#copyTab").onclick=()=>copyAndTell(activePanel().innerText,"Tab copied");
+$("#clearTab").onclick=()=>{ $("pre",activePanel()).textContent="Cleared."; };
+$("#follow").onclick=e=>{
+  const on=e.currentTarget.getAttribute("aria-pressed")!=="true";
+  e.currentTarget.setAttribute("aria-pressed",on); e.currentTarget.classList.toggle("on",on);
+};
+const following=()=>$("#follow").getAttribute("aria-pressed")==="true";
+
+/* Splitter — drag or arrow keys */
+(function(){
+  const s=$("#split"),b=$("#bottom");let y0,h0;
+  const move=e=>{
+    const y=(e.touches?e.touches[0].clientY:e.clientY);
+    b.style.height=Math.max(90,Math.min(innerHeight-220,h0+(y0-y)))+"px";
+  };
+  const up=()=>{ s.classList.remove("drag"); document.removeEventListener("mousemove",move); document.removeEventListener("mouseup",up); };
+  s.addEventListener("mousedown",e=>{ y0=e.clientY;h0=b.offsetHeight;s.classList.add("drag");
+    document.addEventListener("mousemove",move); document.addEventListener("mouseup",up); e.preventDefault(); });
+  s.addEventListener("keydown",e=>{
+    if(e.key==="ArrowUp"||e.key==="ArrowDown"){ e.preventDefault();
+      b.style.height=Math.max(90,Math.min(innerHeight-220,b.offsetHeight+(e.key==="ArrowUp"?24:-24)))+"px"; }
+  });
+})();
+
+/* ══════════════════════════════════════════════════════════════
+   5. Run simulation — swap for your real streaming callbacks
+   ══════════════════════════════════════════════════════════════ */
+let timers=[],running=false;
+const TRACE=[
+ ['g','▸ collecting diff — 4 files, 212 added, 57 removed'],
+ ['','  src/main/kotlin/net/review/ApiClient.kt'],
+ ['','  src/main/kotlin/net/review/ReviewPanel.kt'],
+ ['','  src/main/kotlin/net/review/DiffCollector.kt'],
+ ['','  src/main/resources/prompts/review.md'],
+ ['k','▸ building prompt — 6,148 tokens (budget 8,192)'],
+ ['w','⚠ prompt trimmed: 1 file over per-file cap'],
+ ['k','▸ POST generativelanguage.googleapis.com — streaming'],
+ ['','  first chunk in 412 ms'],
+ ['g','▸ parsed 7 findings — 2 blocker, 2 major, 2 minor, 1 nit'],
+ ['g','✓ done in 3.9 s · 6,148 in / 1,402 out']
+];
+const CHUNKS=["Reviewing four changed files.\n\n","**Blocker — ApiClient.kt:88** ",
+ "the request interceptor logs the full header map, which includes the live bearer token.\n\n",
+ "**Blocker — ReviewPanel.kt:142** the streaming call runs on the EDT and freezes the IDE.\n\n",
+ "**Major — DiffCollector.kt:57** the diff is sent whole with no token budget.\n\n",
+ "**Major — ReviewPanel.kt:203** Stop flips a flag but never cancels the HTTP call.\n\n",
+ "Two minor items and one nit follow.\n"];
+
+function run(){
+  if(running) return;
+  running=true;
+  $("#run").disabled=true; $("#stop").disabled=false;
+  $("#dot").classList.add("live"); $("#prog").classList.add("run");
+  $("#status").textContent="Reviewing "+$("#scope").value.toLowerCase()+"…";
+  $("#trace").textContent=""; $("#stream").textContent="";
+  $("#context").textContent="4 files · 269 changed lines\n\n"+
+    "  M  src/main/kotlin/net/review/ApiClient.kt        +61 −12\n"+
+    "  M  src/main/kotlin/net/review/ReviewPanel.kt      +88 −31\n"+
+    "  M  src/main/kotlin/net/review/DiffCollector.kt    +54 −14\n"+
+    "  M  src/main/resources/prompts/review.md            +9 −0\n";
+  $("#nCtx").textContent="4";
+  render([]);
+  $("#list").innerHTML='<div class="empty"><strong>Reviewing…</strong>Findings appear as the model returns them.</div>';
+
+  TRACE.forEach(([c,line],i)=>timers.push(setTimeout(()=>{
+    append($("#trace"),line+"\n",c); $("#nTrace").textContent=i+1;
+  },250+i*300)));
+  CHUNKS.forEach((c,i)=>timers.push(setTimeout(()=>append($("#stream"),c),700+i*420)));
+  timers.push(setTimeout(()=>{ render(SAMPLE); finish("Review complete — 7 findings"); },TRACE.length*300+600));
+}
+function append(pre,text,cls){
+  const n=cls?Object.assign(document.createElement("span"),{className:cls,textContent:text}):document.createTextNode(text);
+  pre.appendChild(n);
+  if(following()) pre.parentElement.scrollTop=pre.parentElement.scrollHeight;
+}
+function finish(msg){
+  running=false; timers.forEach(clearTimeout); timers=[];
+  $("#run").disabled=false; $("#stop").disabled=true;
+  $("#dot").classList.remove("live"); $("#prog").classList.remove("run");
+  $("#status").textContent=msg;
+}
+$("#run").onclick=run;
+$("#stop").onclick=()=>{ if(running){ append($("#trace"),"✕ cancelled by user\n","w"); finish("Stopped"); } };
+
+/* Shortcuts */
+addEventListener("keydown",e=>{
+  const mod=e.ctrlKey||e.metaKey;
+  if(mod&&e.key==="Enter"){ e.preventDefault(); run(); }
+  else if(e.key==="Escape"){ if(running) $("#stop").click(); else if($("#q").value){ $("#q").value=""; filter(); } }
+  else if(mod&&e.shiftKey&&e.key.toLowerCase()==="c"){ e.preventDefault(); $("#copyAll").click(); }
+  else if(mod&&e.key.toLowerCase()==="f"){ e.preventDefault(); $("#q").focus(); $("#q").select(); }
+  else if(e.altKey&&e.key.toLowerCase()==="z"){ e.preventDefault(); $("#wrapBtn").click(); }
+  else if(e.altKey&&e.key.toLowerCase()==="e"){ e.preventDefault(); $("#expandBtn").click(); }
+});
+
+/* ══════════════════════════════════════════════════════════════
+   6. Plugin API — call these from Kotlin/Java via executeJavaScript
+   ══════════════════════════════════════════════════════════════
+   AICR.render([{sev:"blocker|major|minor|nit", title, file, line,
+                 rule, body, patch}])
+   AICR.trace(line, "g"|"w"|"k")   append a trace line
+   AICR.chunk(text)                append a model-stream chunk
+   AICR.context(text)              set the reviewed-context pane
+   AICR.busy(true|false, status)   toggle spinner + status text
+   AICR.model("Anthropic — claude-opus-5")
+   AICR.theme({bg:"#1e1f22", fg:"#dfe1e5", accent:"#7f52ff"})
+
+   Expose these from the IDE side so copy and navigation work:
+   window.ideCopy = t => CopyPasteManager.copyTextToClipboard(t)
+   window.ideOpenFile = (path,line) => OpenFileDescriptor(...).navigate(true)
+   ══════════════════════════════════════════════════════════════ */
+window.AICR={
+  render,
+  trace:(l,c)=>{append($("#trace"),l+"\n",c); $("#nTrace").textContent=+$("#nTrace").textContent+1;},
+  chunk:t=>append($("#stream"),t),
+  context:t=>{$("#context").textContent=t; $("#nCtx").textContent=(t.match(/\n/g)||[]).length;},
+  busy:(on,s)=>{ running=on; $("#run").disabled=on; $("#stop").disabled=!on;
+    $("#dot").classList.toggle("live",on); $("#prog").classList.toggle("run",on);
+    if(s)$("#status").textContent=s; },
+  model:t=>$("#modelLine").textContent=t,
+  theme:o=>Object.entries(o).forEach(([k,v])=>document.documentElement.style.setProperty("--"+k,v)),
+  copy:copyText, toast
+};
+})();
+</script>

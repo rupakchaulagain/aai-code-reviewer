@@ -1,0 +1,90 @@
+<idea-plugin>
+    <id>com.fintech.aireview</id>
+    <name>Fintech AI Code Reviewer</name>
+    <!-- Injected by Maven resource filtering from pom.xml. -->
+    <version>${project.version}</version>
+    <!-- No until-build: the plugin only uses stable platform + Git4Idea APIs. -->
+    <idea-version since-build="${plugin.sinceBuild}"/>
+    <vendor email="dev@example.com" url="https://example.com">Fintech Platform Engineering</vendor>
+
+    <description><![CDATA[
+      <p><b>AI code review for Java / Spring Boot fintech backends, inside the IDE.</b></p>
+      <p>Reads your local uncommitted changes, staged changes, recent commits or the whole
+      branch diff against a base branch, sends them to an LLM of your choice
+      (Anthropic Claude, OpenAI, Google Gemini or any OpenAI-compatible endpoint) and
+      streams a structured review back into a dedicated tool window on the right.</p>
+      <ul>
+        <li>Enforces fintech domain rules: data integrity, idempotency, auditability, ACID.</li>
+        <li>Scans for OWASP Top 10 issues: injection, XSS, IDOR, broken access control.</li>
+        <li>Applies the team's Top 10 Java / Spring Boot rules (DI, thin controllers,
+            transactions, N+1, validation, logging, config, null safety, immutability).</li>
+        <li>Findings are split into 🔴 Must Do and 🟡 Should Do, each with deep reasoning
+            and a one-click <i>Copy code</i> button on the suggested fix.</li>
+      </ul>
+      <p>Works in IntelliJ IDEA and WebStorm (and any other JetBrains IDE with Git support).</p>
+    ]]></description>
+
+    <change-notes><![CDATA[
+      <b>1.0.0</b> - initial release: Git-aware review sources, four LLM providers with
+      streaming, structured Must Do / Should Do output, credential-store token storage.
+    ]]></change-notes>
+
+    <!-- Platform-only dependency keeps the plugin installable in IDEA, WebStorm, PyCharm, GoLand... -->
+    <depends>com.intellij.modules.platform</depends>
+    <depends>Git4Idea</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow
+                id="AI Code Review"
+                anchor="right"
+                icon="com.fintech.aireview.ui.AiReviewIcons.ToolWindow"
+                factoryClass="com.fintech.aireview.ui.ReviewToolWindowFactory"/>
+
+        <applicationConfigurable
+                parentId="tools"
+                id="com.fintech.aireview.settings"
+                displayName="AI Code Reviewer"
+                instance="com.fintech.aireview.settings.AiReviewConfigurable"/>
+
+        <notificationGroup id="AI Code Reviewer" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <group id="AiReview.MainGroup" text="AI Code Review" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+
+            <action id="AiReview.LocalChanges"
+                    class="com.fintech.aireview.actions.ReviewLocalChangesAction"
+                    text="Review Local Changes"
+                    description="Review all uncommitted changes in the working tree">
+                <keyboard-shortcut keymap="$default" first-keystroke="control alt shift R"/>
+            </action>
+            <action id="AiReview.LastCommit"
+                    class="com.fintech.aireview.actions.ReviewLastCommitAction"
+                    text="Review Last Commit"
+                    description="Review the most recent commit"/>
+            <action id="AiReview.Branch"
+                    class="com.fintech.aireview.actions.ReviewBranchAction"
+                    text="Review Branch vs Base (Pull Request)"
+                    description="Review the whole branch against the configured base branch"/>
+            <action id="AiReview.CurrentFile"
+                    class="com.fintech.aireview.actions.ReviewCurrentFileAction"
+                    text="Review Current File"
+                    description="Review the file currently open in the editor"/>
+        </group>
+
+        <action id="AiReview.EditorCurrentFile"
+                class="com.fintech.aireview.actions.ReviewCurrentFileAction"
+                text="AI Review: Current File"
+                description="Review the file currently open in the editor">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </action>
+
+        <action id="AiReview.VcsLocalChanges"
+                class="com.fintech.aireview.actions.ReviewLocalChangesAction"
+                text="AI Review: Local Changes"
+                description="Review all uncommitted changes in the working tree">
+            <add-to-group group-id="VcsGroups" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

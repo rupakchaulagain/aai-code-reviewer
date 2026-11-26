@@ -1,0 +1,237 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  AI Code Reviewer — every piece of text shown in the UI.
+#
+#  Customise without rebuilding:
+#    copy this file (or just the keys you want to change) to
+#        ~/.ai-code-reviewer/ui-text.yml
+#    Keys there are merged over these defaults. The tool window picks the
+#    change up on the next review run or when Settings are closed; the
+#    Settings page and menu actions pick it up the next time they are shown.
+#
+#  Placeholders are written {name} and filled in by the plugin.
+# ─────────────────────────────────────────────────────────────────────────────
+
+app:
+  name: AI Code Reviewer
+  toolWindowTitle: AI Code Review
+  backgroundTask: AI code review
+
+# Review scopes (keys must match ReviewSource enum names)
+scopes:
+  UNCOMMITTED: Local uncommitted changes
+  STAGED: Staged changes (index)
+  LAST_COMMIT: Last commit
+  LAST_N_COMMITS: Last N commits
+  BRANCH_VS_BASE: Branch vs. base (pull request)
+  CURRENT_FILE: Current file
+
+severity:
+  blocker: Must Do
+  major: Should Do
+  minor: Info
+  nit: Nit
+
+# Menu / context-menu actions (keys are the action id without "AiReview.")
+actions:
+  group: AI Code Review
+  LocalChanges:
+    text: Review Local Changes
+    description: Review all uncommitted changes in the working tree
+  LastCommit:
+    text: Review Last Commit
+    description: Review the most recent commit
+  Branch:
+    text: Review Branch vs Base (Pull Request)
+    description: Review the whole branch against the configured base branch
+  CurrentFile:
+    text: Review Current File
+    description: Review the file currently open in the editor
+  EditorCurrentFile:
+    text: "AI Review: Current File"
+    description: Review the file currently open in the editor
+  VcsLocalChanges:
+    text: "AI Review: Local Changes"
+    description: Review all uncommitted changes in the working tree
+
+# Shared status / trace lines (both tool-window UIs)
+status:
+  idle: Idle
+  reviewing: "Reviewing {scope}…"
+  done: "Done in {seconds}s · risk {risk} · {must} must-do, {should} should-do"
+  failed: Failed — see the Trace tab
+  stopped: Stopped
+  contextReady: "Reviewing {files} file(s) · {chars} chars of context"
+  modelLine: "{provider} — {model} ({token})"
+  tokenSet: token set
+  tokenMissing: no token
+  riskUnknown: UNKNOWN
+  noToken: "No API token configured for {provider}. Open Settings and add one."
+  providerLine: "Provider: {provider}   Model: {model}"
+  summaryLine: "Summary: {summary}"
+  cantLocate: "Can't locate {path} in the project"
+
+# Review engine progress + trace
+engine:
+  collecting: Collecting changes from Git...
+  started: "=== AI code review started ({scope}) ==="
+  asking: "Asking {provider} ({model}) to review..."
+  promptSize: "Prompt size: {chars} characters."
+  parsing: Parsing review results...
+  complete: "Review complete in {seconds}s - {must} must-do, {should} should-do."
+  cancelled: Review cancelled by user.
+  error: "ERROR: {message}"
+
+# Rich (HTML) tool window
+panel:
+  title: AI Code Review
+  toolbar:
+    wrap: Toggle word wrap (Alt+Z)
+    expand: Expand or collapse all (Alt+E)
+    copyAll: Copy full review as Markdown (Ctrl+Shift+C)
+    settings: Open AI Code Reviewer settings
+    help: Keyboard shortcuts (?)
+  scopeLabel: "Review:"
+  run: Review
+  running: Reviewing…
+  stop: Stop
+  rerun: Run again
+  openSettings: Open settings
+  modelLoading: Loading model…
+
+  filters:
+    placeholder: Filter findings, files, rules…
+    severityTip: "Click to toggle · double-click to show only {label}"
+    hideResolved: Hide resolved
+    groupByFile: Group by file
+
+  summary:
+    title: Summary
+    risk: "Risk {risk}"
+    resolved: "{done} of {total} resolved"
+    allResolved: All findings resolved 🎉
+
+  empty:
+    title: No review yet
+    body: Pick a scope and run a review. Findings land here, grouped by severity, with jump-to-line links and copyable fixes.
+    reviewingTitle: Reviewing…
+    reviewingBody: Findings appear as the model returns them.
+    nothingTitle: Nothing flagged
+    nothingBody: The model reviewed the diff and found no issues worth reporting.
+    failedTitle: Review failed
+    noMatch: No findings match the filter
+    clearFilters: Clear filters
+
+  finding:
+    impact: Impact
+    currentCode: Current code
+    suggestedFix: Suggested fix
+    noDetail: No further detail provided.
+    copySnippet: Copy snippet
+    copyFinding: Copy finding
+    openInEditor: Open in editor
+    resolve: Mark resolved
+    reopen: Reopen
+    resolvedTip: Mark this finding as resolved (X)
+    fileCount: "{count} finding(s)"
+
+  tabs:
+    trace: Trace
+    stream: Model stream
+    context: Reviewed context
+    follow: Follow output
+    copy: Copy this tab
+    clear: Clear
+    waiting: Waiting for a run.
+    noContext: No context collected yet.
+    cleared: Cleared.
+    resize: Resize panels
+
+  footer:
+    shown: "{shown} of {total} findings shown"
+    elapsed: "{seconds}s"
+    runHint: run
+    stopHint: stop
+    helpHint: shortcuts
+
+  toast:
+    copied: "{label} · {chars} chars"
+    copiedDefault: Copied
+    copyBlocked: Copy blocked by the IDE — select the text and press Ctrl+C
+    nothingToCopy: Nothing to copy yet
+    wouldOpen: "Would open {file}:{line}"
+    snippetCopied: Snippet copied
+    findingCopied: Finding copied
+    reviewCopied: Review copied as Markdown
+    tabCopied: Tab copied
+    resolved: Marked resolved
+    reopened: Reopened
+
+  markdown:
+    heading: "# AI Code Review"
+    scope: "Scope: {scope}"
+    model: "Model: {model}"
+    risk: "Risk: {risk}"
+
+  help:
+    title: Keyboard shortcuts
+    close: Close
+    run: Run review
+    stop: Stop review / clear filter
+    next: Next finding
+    prev: Previous finding
+    toggle: Expand / collapse finding
+    open: Open finding in editor
+    copy: Copy finding
+    resolve: Mark finding resolved
+    search: Focus filter box
+    wrap: Toggle word wrap
+    expand: Expand / collapse all
+    copyAll: Copy whole review
+    help: Show this help
+
+# Plain Swing tool window (used when the IDE has no embedded browser)
+swing:
+  filterAll: All findings
+  filterMust: Must Do only
+  filterShould: Should Do only
+  settings: Settings
+  sourceTip: What should be reviewed
+  runTip: Run the AI code review
+  stopTip: Cancel the running review
+  filterTip: Filter the result list
+  summary: "Summary  -  risk {risk}  -  {mustEmoji} {must} Must Do  {shouldEmoji} {should} Should Do"
+  copyAllFixes: Copy all fixes
+  noFindings: No findings in this category.
+  runningReview: Running review...
+  whyFlagged: Why this was flagged
+  copyCode: Copy code
+  copy: Copy
+  copied: Copied
+  copyTip: Copy this snippet to the clipboard
+
+# Settings page (Settings › Tools › AI Code Reviewer)
+settings:
+  displayName: AI Code Reviewer
+  hint: >-
+    <html>Tokens are stored in the IDE credential store (OS keychain), never in project files.<br>
+    Leave the base URL empty to use the provider default. Use <b>Custom</b> for Ollama, vLLM,
+    OpenRouter or an internal OpenAI-compatible gateway.<br>
+    UI text can be customised in <code>~/.ai-code-reviewer/ui-text.yml</code>.</html>
+  provider: "Provider:"
+  model: "Model:"
+  token: "API token:"
+  testConnection: Test connection
+  baseUrl: "Custom API base URL:"
+  maxTokens: "Max output tokens:"
+  temperature: "Temperature (0.0 - 1.0):"
+  timeout: "Request timeout (seconds):"
+  maxContext: "Max context characters:"
+  streaming: Stream the review live into the tool window
+  commitCount: "Commits for 'Last N commits':"
+  baseBranch: "Base branch for PR review:"
+  untracked: Include new untracked files when reviewing local changes
+  extraRules: "Extra house rules (appended to the system prompt):"
+  tokenFormat: "Token format: {hint}"
+  testing: "Testing {provider} connection"
+  testFailed: "Connection failed.\n\n{message}"
+  testOk: "Connection succeeded.\n\nModel replied: {reply}"

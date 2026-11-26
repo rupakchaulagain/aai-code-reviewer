@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.fintech.aireview</groupId>
+    <artifactId>ai-code-reviewer</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>Fintech AI Code Reviewer</name>
+    <description>AI code review tool window for IntelliJ IDEA / WebStorm (and any JetBrains IDE with Git).</description>
+
+    <!--
+      JetBrains publishes the IntelliJ Platform modules (and bundled plugins such as Git4Idea)
+      as ordinary Maven artifacts. They are compiled against with `provided` scope: every IDE
+      already ships them, so only the plugin classes + Gson end up in the plugin zip.
+
+      `mvn package` produces target/ai-code-reviewer-1.0.0.zip - install it with
+      Settings > Plugins > gear icon > Install Plugin from Disk...
+    -->
+
+    <properties>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- IntelliJ Platform build to compile against: IDEA 2024.2.5 == 242.24807.4 -->
+        <intellij.platform.version>242.24807.4</intellij.platform.version>
+        <!-- Written into plugin.xml <idea-version>. No until-build: stable APIs only. -->
+        <plugin.sinceBuild>242</plugin.sinceBuild>
+
+        <gson.version>2.11.0</gson.version>
+        <snakeyaml.version>2.2</snakeyaml.version>
+    </properties>
+
+    <repositories>
+        <repository>
+            <id>intellij-releases</id>
+            <url>https://www.jetbrains.com/intellij-repository/releases</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+        <!-- Third-party libraries the platform modules depend on (JetBrains forks, jcef, ...). -->
+        <repository>
+            <id>intellij-dependencies</id>
+            <url>https://cache-redirector.jetbrains.com/intellij-dependencies</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <!-- Bundled into the plugin zip - used for LLM request/response JSON. -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>${gson.version}</version>
+        </dependency>
+
+        <!-- Bundled into the plugin zip - parses ui/ui-text.yml (all UI text). -->
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <version>${snakeyaml.version}</version>
+        </dependency>
+
+        <!-- IntelliJ Platform (provided by the IDE at runtime). -->
+        <dependency>
+            <groupId>com.jetbrains.intellij.platform</groupId>
+            <artifactId>ide-impl</artifactId>
+            <version>${intellij.platform.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Git4Idea, bundled in every JetBrains IDE (plugin.xml: <depends>Git4Idea</depends>). -->
+        <dependency>
+            <groupId>com.jetbrains.intellij.vcs</groupId>
+            <artifactId>git</artifactId>
+            <version>${intellij.platform.version}</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <!-- plugin.xml gets version / since-build injected; everything else is copied verbatim
+                 (panel.html contains JS ${...} template literals that must not be filtered). -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>META-INF/plugin.xml</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>META-INF/plugin.xml</exclude>
+                </excludes>
+            </resource>
+        </resources>
+
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>${maven.compiler.release}</release>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
+            </plugin>
+
+            <!-- Installable plugin archive: target/ai-code-reviewer-1.0.0.zip -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.7.1</version>
+                <executions>
+                    <execution>
+                        <id>plugin-zip</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                        <configuration>
+                            <descriptors>
+                                <descriptor>src/assembly/plugin-zip.xml</descriptor>
+                            </descriptors>
+                            <finalName>${project.artifactId}-${project.version}</finalName>
+                            <appendAssemblyId>false</appendAssemblyId>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
